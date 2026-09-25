@@ -1,11 +1,19 @@
-import RailMap from "@/components/map/RailMap";
+"use client";
+
+import { useRef } from "react";
+import RailMap, {
+  RailMapHandle,
+} from "@/components/map/RailMap";
+import StationSearch from "@/components/search/StationSearch";
 
 export default function Home() {
+  const mapRef = useRef<RailMapHandle>(null);
+
   return (
     <main className="relative h-screen overflow-hidden bg-[#070b0f] text-white">
       {/* Full-screen map */}
       <div className="absolute inset-0 z-0">
-        <RailMap />
+        <RailMap ref={mapRef} />
       </div>
 
       {/* Top atmospheric gradient */}
@@ -14,7 +22,7 @@ export default function Home() {
       {/* Bottom atmospheric gradient */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 h-52 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
 
-      {/* Fixed Header */}
+      {/* Header */}
       <header className="pointer-events-none fixed inset-x-0 top-0 z-[100] flex h-24 items-center px-8">
         <div>
           <h1 className="text-4xl font-bold tracking-[0.22em] drop-shadow-2xl">
@@ -37,20 +45,20 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Fixed Search */}
+      {/* Search */}
       <div className="pointer-events-none fixed inset-x-0 top-28 z-[100] flex justify-center px-6">
         <div className="pointer-events-auto w-full max-w-3xl">
-          <div className="rounded-2xl border border-white/15 bg-[#080d12]/65 px-6 py-5 shadow-2xl backdrop-blur-xl transition-all duration-200 focus-within:border-white/30 focus-within:bg-[#080d12]/80">
-            <input
-              type="text"
-              placeholder="Search train, station or route..."
-              className="w-full bg-transparent text-lg text-white outline-none placeholder:text-white/45"
-            />
-          </div>
+          <StationSearch
+            onSelect={(station) => {
+              mapRef.current?.flyToStation(
+                station.coordinates
+              );
+            }}
+          />
         </div>
       </div>
 
-      {/* Fixed Bottom Statistics */}
+      {/* Bottom statistics */}
       <div className="pointer-events-none fixed bottom-7 left-7 z-[100]">
         <div className="flex items-end gap-2">
           <Stat label="TRAINS" value="0" />

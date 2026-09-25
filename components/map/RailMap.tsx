@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+} from "react";
 import {
   Map,
   NavigationControl,
@@ -11,9 +16,28 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
 
-export default function RailMap() {
+export type RailMapHandle = {
+  flyToStation: (coordinates: [number, number]) => void;
+};
+
+const RailMap = forwardRef<RailMapHandle>(function RailMap(_, ref) {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const map = useRef<Map | null>(null);
+
+  /*
+   * Allows other components, such as StationSearch,
+   * to control the map without directly accessing
+   * the MapLibre instance.
+   */
+  useImperativeHandle(ref, () => ({
+    flyToStation(coordinates) {
+      map.current?.flyTo({
+        center: coordinates,
+        zoom: 12,
+        duration: 1800,
+      });
+    },
+  }));
 
   useEffect(() => {
     const container = mapContainer.current;
@@ -193,6 +217,9 @@ export default function RailMap() {
 
     map.current = mapInstance;
 
+    /*
+     * Station click
+     */
     mapInstance.on("click", "station-points", (event) => {
       const feature = event.features?.[0];
 
@@ -201,11 +228,11 @@ export default function RailMap() {
       }
 
       const coordinates = (
-  feature.geometry as {
-    type: "Point";
-    coordinates: [number, number];
-  }
-).coordinates;
+        feature.geometry as {
+          type: "Point";
+          coordinates: [number, number];
+        }
+      ).coordinates;
 
       const properties = feature.properties ?? {};
 
@@ -254,6 +281,9 @@ export default function RailMap() {
         .addTo(mapInstance);
     });
 
+    /*
+     * Station hover
+     */
     mapInstance.on(
       "mouseenter",
       "station-points",
@@ -270,6 +300,9 @@ export default function RailMap() {
       }
     );
 
+    /*
+     * Keep MapLibre synchronized with the container size.
+     */
     const resizeObserver = new ResizeObserver(() => {
       mapInstance.resize();
     });
@@ -280,6 +313,9 @@ export default function RailMap() {
       mapInstance.resize();
     });
 
+    /*
+     * Cleanup
+     */
     return () => {
       resizeObserver.disconnect();
       mapInstance.remove();
@@ -293,7 +329,11 @@ export default function RailMap() {
       className="absolute inset-0 h-full w-full"
     />
   );
-}
+});
+
+RailMap.displayName = "RailMap";
+
+export default RailMap;
 
 function escapeHtml(value: string) {
   return value
