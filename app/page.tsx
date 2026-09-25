@@ -1,19 +1,45 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
+
 import RailMap, {
   RailMapHandle,
 } from "@/components/map/RailMap";
+
 import StationSearch from "@/components/search/StationSearch";
+
+import StationPanel from "@/components/station/StationPanel";
+
+import TrainPanel from "@/components/train/TrainPanel";
+
+import type { Station } from "@/lib/stations";
+
+import type { Train } from "@/components/train/trainData";
 
 export default function Home() {
   const mapRef = useRef<RailMapHandle>(null);
+
+  const [selectedStation, setSelectedStation] =
+    useState<Station | null>(null);
+
+  const [selectedTrain, setSelectedTrain] =
+    useState<Train | null>(null);
 
   return (
     <main className="relative h-screen overflow-hidden bg-[#070b0f] text-white">
       {/* Full-screen map */}
       <div className="absolute inset-0 z-0">
-        <RailMap ref={mapRef} />
+        <RailMap
+          ref={mapRef}
+          onStationSelect={(station) => {
+            setSelectedStation(station);
+            setSelectedTrain(null);
+          }}
+          onTrainSelect={(train) => {
+            setSelectedTrain(train);
+            setSelectedStation(null);
+          }}
+        />
       </div>
 
       {/* Top atmospheric gradient */}
@@ -53,6 +79,9 @@ export default function Home() {
               mapRef.current?.flyToStation(
                 station.coordinates
               );
+
+              setSelectedStation(station);
+              setSelectedTrain(null);
             }}
           />
         </div>
@@ -61,12 +90,35 @@ export default function Home() {
       {/* Bottom statistics */}
       <div className="pointer-events-none fixed bottom-7 left-7 z-[100]">
         <div className="flex items-end gap-2">
-          <Stat label="TRAINS" value="0" />
-          <Stat label="ON TIME" value="0" />
-          <Stat label="DELAYED" value="0" />
+          <Stat label="TRAINS" value="5" />
+
+          <Stat label="ON TIME" value="4" />
+
+          <Stat label="DELAYED" value="1" />
+
           <Stat label="NETWORK" value="ONLINE" />
         </div>
       </div>
+
+      {/* Station panel */}
+      {selectedStation && (
+        <StationPanel
+          station={selectedStation}
+          onClose={() => {
+            setSelectedStation(null);
+          }}
+        />
+      )}
+
+      {/* Train panel */}
+      {selectedTrain && (
+        <TrainPanel
+          train={selectedTrain}
+          onClose={() => {
+            setSelectedTrain(null);
+          }}
+        />
+      )}
     </main>
   );
 }
