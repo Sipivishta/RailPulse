@@ -1,13 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-type Station = {
-  id: string;
-  name: string;
-  code?: string;
-  coordinates: [number, number];
-};
+import {
+  loadStations,
+  type Station,
+} from "@/lib/stations";
 
 type StationSearchProps = {
   onSelect: (station: Station) => void;
@@ -23,48 +20,8 @@ export default function StationSearch({
   const [showResults, setShowResults] = useState(true);
 
   useEffect(() => {
-    fetch("/data/india-railway-stations.geojson")
-      .then((response) => response.json())
-      .then((data) => {
-        const parsedStations: Station[] = data.features
-          .map((feature: any) => {
-            const properties = feature.properties ?? {};
-            const coordinates = feature.geometry?.coordinates;
-
-            const name =
-              properties.name ??
-              properties["name:en"];
-
-            if (
-              !name ||
-              !Array.isArray(coordinates) ||
-              coordinates.length < 2
-            ) {
-              return null;
-            }
-
-            return {
-              id:
-                feature.id ??
-                `${coordinates[0]}-${coordinates[1]}`,
-
-              name: String(name),
-
-              code:
-                properties["ref:IN:railway"] ??
-                properties.ref ??
-                properties.code,
-
-              coordinates: [
-                Number(coordinates[0]),
-                Number(coordinates[1]),
-              ],
-            };
-          })
-          .filter(Boolean);
-
-        setStations(parsedStations);
-      })
+    loadStations()
+      .then(setStations)
       .catch((error) => {
         console.error(
           "Failed to load station data:",
@@ -104,7 +61,7 @@ export default function StationSearch({
       return exactNameMatch;
     }
 
-    // 3. Station code starts with query
+    // 3. Code starts with query
     const codeStartsWithMatch = stations.find(
       (station) =>
         station.code
@@ -116,7 +73,7 @@ export default function StationSearch({
       return codeStartsWithMatch;
     }
 
-    // 4. Station name starts with query
+    // 4. Name starts with query
     const nameStartsWithMatch = stations.find(
       (station) =>
         station.name
@@ -128,7 +85,7 @@ export default function StationSearch({
       return nameStartsWithMatch;
     }
 
-    // 5. Station name contains query
+    // 5. Name contains query
     const nameContainsMatch = stations.find(
       (station) =>
         station.name
@@ -163,18 +120,12 @@ export default function StationSearch({
       return;
     }
 
-    // Station exists.
     setError("");
-
-    // IMPORTANT:
-    // Hide suggestions after successful search.
     setShowResults(false);
     setResults([]);
 
-    // Render/fly to the station.
     onSelect(bestMatch);
 
-    // Show the resolved station name in the search bar.
     setQuery(bestMatch.name);
   }
 
@@ -220,14 +171,8 @@ export default function StationSearch({
           type="text"
           value={query}
           onChange={(event) => {
-            const value = event.target.value;
-
-            setQuery(value);
-
-            // User is searching again.
+            setQuery(event.target.value);
             setShowResults(true);
-
-            // Remove old error.
             setError("");
           }}
           onKeyDown={(event) => {
@@ -241,14 +186,12 @@ export default function StationSearch({
         />
       </div>
 
-      {/* Error message */}
       {error && (
         <div className="mt-2 rounded-xl border border-red-400/20 bg-black/75 px-4 py-3 text-sm text-red-300 shadow-xl backdrop-blur-xl">
           {error}
         </div>
       )}
 
-      {/* Search suggestions */}
       {showResults &&
         !error &&
         results.length > 0 && (
@@ -259,13 +202,9 @@ export default function StationSearch({
                 type="button"
                 onClick={() => {
                   onSelect(station);
-
                   setQuery(station.name);
-
                   setResults([]);
-
                   setShowResults(false);
-
                   setError("");
                 }}
                 className="flex w-full items-center justify-between border-b border-white/5 px-5 py-4 text-left transition hover:bg-white/10"
