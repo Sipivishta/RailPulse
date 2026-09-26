@@ -1,55 +1,76 @@
 "use client";
 
-import { useRef, useState } from "react";
+import {
+  useCallback,
+  useRef,
+  useState,
+} from "react";
 
 import RailMap, {
-  RailMapHandle,
+  type RailMapHandle,
 } from "@/components/map/RailMap";
 
-import StationSearch from "@/components/search/StationSearch";
+import StationSearch, {
+  type TrainSearchResult,
+} from "@/components/search/StationSearch";
 
-import StationPanel from "@/components/station/StationPanel";
-
-import TrainPanel from "@/components/train/TrainPanel";
+import StationIntelligencePanel from "@/components/station/StationIntelligencePanel";
 
 import type { Station } from "@/lib/stations";
 
-import type { Train } from "@/components/train/trainData";
-
 export default function Home() {
-  const mapRef = useRef<RailMapHandle>(null);
+  const railMapRef =
+    useRef<RailMapHandle>(null);
 
   const [selectedStation, setSelectedStation] =
     useState<Station | null>(null);
 
   const [selectedTrain, setSelectedTrain] =
-    useState<Train | null>(null);
+    useState<TrainSearchResult | null>(null);
+
+  const handleStationSelect = useCallback(
+    (station: Station) => {
+      setSelectedStation(station);
+      setSelectedTrain(null);
+
+      /*
+       * Station coordinates are:
+       *
+       * [longitude, latitude]
+       */
+      railMapRef.current?.flyToStation(
+        station.coordinates
+      );
+    },
+    []
+  );
+
+  const handleTrainSelect = useCallback(
+    (train: TrainSearchResult) => {
+      setSelectedTrain(train);
+      setSelectedStation(null);
+    },
+    []
+  );
 
   return (
     <main className="relative h-screen overflow-hidden bg-[#070b0f] text-white">
-      {/* Full-screen map */}
+      {/* MAP */}
       <div className="absolute inset-0 z-0">
         <RailMap
-          ref={mapRef}
-          onStationSelect={(station) => {
-            setSelectedStation(station);
-            setSelectedTrain(null);
-          }}
-          onTrainSelect={(train) => {
-            setSelectedTrain(train);
-            setSelectedStation(null);
-          }}
+          ref={railMapRef}
+          onStationSelect={handleStationSelect}
         />
       </div>
 
-      {/* Top atmospheric gradient */}
-      <div className="pointer-events-none fixed inset-x-0 top-0 z-10 h-48 bg-gradient-to-b from-black/85 via-black/40 to-transparent" />
+      {/* TOP GRADIENT */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-48 bg-gradient-to-b from-black/85 via-black/40 to-transparent" />
 
-      {/* Bottom atmospheric gradient */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 h-52 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+      {/* BOTTOM GRADIENT */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-40 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
 
-      {/* Header */}
-      <header className="pointer-events-none fixed inset-x-0 top-0 z-[100] flex h-24 items-center px-8">
+      {/* HEADER */}
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-30 flex h-24 items-center px-8">
         <div>
           <h1 className="text-4xl font-bold tracking-[0.22em] drop-shadow-2xl">
             RAILPULSE
@@ -71,74 +92,127 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Search */}
-      <div className="pointer-events-none fixed inset-x-0 top-28 z-[100] flex justify-center px-6">
+      {/* SEARCH */}
+      <div className="pointer-events-none absolute inset-x-0 top-28 z-30 flex justify-center px-6">
         <div className="pointer-events-auto w-full max-w-3xl">
           <StationSearch
-            onSelect={(station) => {
-              mapRef.current?.flyToStation(
-                station.coordinates
-              );
-
-              setSelectedStation(station);
-              setSelectedTrain(null);
-            }}
+            onSelect={handleStationSelect}
+            onTrainSelect={handleTrainSelect}
           />
         </div>
       </div>
 
-      {/* Bottom statistics */}
-      <div className="pointer-events-none fixed bottom-7 left-7 z-[100]">
-        <div className="flex items-end gap-2">
-          <Stat label="TRAINS" value="5" />
+      {/* STATION INTELLIGENCE */}
+      <StationIntelligencePanel
+        station={selectedStation}
+        onClose={() =>
+          setSelectedStation(null)
+        }
+      />
 
-          <Stat label="ON TIME" value="4" />
-
-          <Stat label="DELAYED" value="1" />
-
-          <Stat label="NETWORK" value="ONLINE" />
-        </div>
-      </div>
-
-      {/* Station panel */}
-      {selectedStation && (
-        <StationPanel
-          station={selectedStation}
-          onClose={() => {
-            setSelectedStation(null);
-          }}
-        />
-      )}
-
-      {/* Train panel */}
+      {/* TRAIN SEARCH RESULT */}
       {selectedTrain && (
-        <TrainPanel
-          train={selectedTrain}
-          onClose={() => {
-            setSelectedTrain(null);
-          }}
-        />
+        <div className="absolute right-5 top-48 z-30 w-[340px] overflow-hidden rounded-2xl border border-cyan-400/20 bg-[#080d12]/90 shadow-2xl backdrop-blur-xl">
+          <div className="border-b border-white/10 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[9px] tracking-[0.2em] text-cyan-300/60">
+                  LIVE TRAIN
+                </p>
+
+                <h2 className="mt-1 text-base font-semibold text-white">
+                  {selectedTrain.number}
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedTrain(null)
+                }
+                className="text-lg text-white/30 transition hover:text-white"
+              >
+                ×
+              </button>
+            </div>
+
+            <p className="mt-1 truncate text-xs text-white/60">
+              {selectedTrain.name ??
+                "Unknown train"}
+            </p>
+          </div>
+
+          <div className="space-y-3 px-4 py-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] tracking-wider text-white/35">
+                STATUS
+              </span>
+
+              <span className="text-xs font-medium uppercase text-emerald-300">
+                {selectedTrain.status ??
+                  "UNKNOWN"}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] tracking-wider text-white/35">
+                DELAY
+              </span>
+
+              <span className="text-xs font-medium text-white/80">
+                {selectedTrain.delayMinutes !==
+                null
+                  ? `${selectedTrain.delayMinutes} min`
+                  : "UNKNOWN"}
+              </span>
+            </div>
+
+            <div>
+              <p className="text-[10px] tracking-wider text-white/35">
+                ROUTE
+              </p>
+
+              <p className="mt-1 text-xs text-white/75">
+                {selectedTrain.origin?.name ??
+                  "Unknown"}{" "}
+                →{" "}
+                {selectedTrain.destination
+                  ?.name ?? "Unknown"}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-[10px] tracking-wider text-white/35">
+                CURRENT LOCATION
+              </p>
+
+              <p className="mt-1 text-xs text-white/75">
+                {selectedTrain
+                  .currentLocation
+                  ?.stationName ??
+                  "Unknown"}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-white/5 pt-3">
+              <span className="text-[9px] tracking-wider text-white/30">
+                POSITION
+              </span>
+
+              <span className="text-[9px] tracking-wider text-cyan-300/70">
+                {
+                  selectedTrain.positionQuality
+                }
+              </span>
+            </div>
+
+            <div className="text-right text-[9px] tracking-wider text-white/25">
+              SOURCE:{" "}
+              {selectedTrain.provider}
+            </div>
+          </div>
+        </div>
       )}
     </main>
-  );
-}
-
-function Stat({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-xl border border-white/10 bg-black/35 px-5 py-3 shadow-lg backdrop-blur-md">
-      <p className="text-[9px] tracking-[0.18em] text-white/40">
-        {label}
-      </p>
-
-      <p className="mt-0.5 text-base font-medium text-white/90">
-        {value}
-      </p>
-    </div>
   );
 }

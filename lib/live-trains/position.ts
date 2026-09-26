@@ -241,6 +241,13 @@ function pointAlongLine(
   end: ProjectedPoint,
   progress: number
 ): Coordinate {
+  /*
+   * The exported function validates progress
+   * before this function is called.
+   *
+   * This defensive clamp protects this internal
+   * helper if it is changed or reused later.
+   */
   const clampedProgress =
     Math.max(
       0,
@@ -407,17 +414,20 @@ export function calculateTrainPosition(
     return null;
   }
 
+  /*
+   * RailRadar segmentProgress is expected
+   * to be between 0.0 and 1.0.
+   *
+   * Invalid provider data must not be silently
+   * converted into a valid-looking position.
+   */
   if (
-    !Number.isFinite(progress)
+    !Number.isFinite(progress) ||
+    progress < 0 ||
+    progress > 1
   ) {
     return null;
   }
-
-  const clampedProgress =
-    Math.max(
-      0,
-      Math.min(1, progress)
-    );
 
   const startPoint =
     findNearestPoint(
@@ -487,7 +497,7 @@ export function calculateTrainPosition(
       reversedLine,
       reversedStart,
       reversedEnd,
-      clampedProgress
+      progress
     );
   }
 
@@ -495,6 +505,6 @@ export function calculateTrainPosition(
     line,
     startPoint,
     endPoint,
-    clampedProgress
+    progress
   );
 }

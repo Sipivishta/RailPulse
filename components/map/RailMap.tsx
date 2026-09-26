@@ -1,655 +1,544 @@
 "use client";
 
 import {
+  forwardRef,
   useEffect,
   useImperativeHandle,
   useRef,
-  forwardRef,
 } from "react";
 
-import type { Station } from "@/lib/stations";
 import {
-  trains,
-  type Train,
-} from "@/components/train/trainData";
-
-import {
-  Map,
+  Map as MapLibreMap,
   NavigationControl,
+  Marker,
   setWorkerUrl,
 } from "maplibre-gl";
 
+import type { Station } from "@/lib/stations";
+
 import "maplibre-gl/dist/maplibre-gl.css";
 
-setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
-
 export type RailMapHandle = {
-  flyToStation: (coordinates: [number, number]) => void;
+  flyToStation: (
+    coordinate: [number, number]
+  ) => void;
 };
 
 type RailMapProps = {
-  onStationSelect?: (station: Station) => void;
-  onTrainSelect?: (train: Train) => void;
+  onStationSelect?: (
+    station: Station
+  ) => void;
 };
 
-const RailMap = forwardRef<RailMapHandle, RailMapProps>(
-  function RailMap(
-    {
-      onStationSelect,
-      onTrainSelect,
-    },
-    ref
-  ) {
-    const mapContainer = useRef<HTMLDivElement | null>(
-      null
+const INDIA_CENTER: [number, number] = [
+  78.9629,
+  22.5937,
+];
+
+const INDIA_ZOOM = 4.2;
+
+const OSM_TILE_URL =
+  "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+
+const OPEN_RAILWAY_MAP_TILE_URL =
+  "https://tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png";
+
+const RailMap = forwardRef<
+  RailMapHandle,
+  RailMapProps
+>(function RailMap(
+  { onStationSelect },
+  ref
+) {
+  const containerRef =
+    useRef<HTMLDivElement | null>(null);
+
+  const mapRef =
+    useRef<MapLibreMap | null>(null);
+
+  const stationMarkersRef =
+    useRef<Map<string, Marker>>(
+      new globalThis.Map<
+        string,
+        Marker
+      >()
     );
 
-    const map = useRef<Map | null>(null);
+  /*
+   * MapLibre worker
+   */
+  setWorkerUrl(
+    "/maplibre/maplibre-gl-worker.mjs"
+  );
 
-    const stationSelectRef =
-      useRef(onStationSelect);
+  /*
+   * Expose map controls to page.tsx.
+   */
+  useImperativeHandle(
+    ref,
+    () => ({
+      flyToStation(coordinate) {
+        const map = mapRef.current;
 
-    const trainSelectRef =
-      useRef(onTrainSelect);
+        if (!map) {
+          return;
+        }
 
-    useEffect(() => {
-      stationSelectRef.current =
-        onStationSelect;
-    }, [onStationSelect]);
+        const [lng, lat] =
+          coordinate;
 
-    useEffect(() => {
-      trainSelectRef.current =
-        onTrainSelect;
-    }, [onTrainSelect]);
+        if (
+          !Number.isFinite(lng) ||
+          !Number.isFinite(lat)
+        ) {
+          return;
+        }
 
-    useImperativeHandle(ref, () => ({
-      flyToStation(coordinates) {
-        map.current?.flyTo({
-          center: coordinates,
+        map.flyTo({
+          center: [lng, lat],
           zoom: 12,
-          duration: 1800,
+          speed: 1.4,
+          curve: 1.4,
+          essential: true,
         });
+
+        /*
+         * Temporary selected-station marker.
+         */
+        const markerElement =
+          document.createElement("div");
+
+        markerElement.style.width =
+          "16px";
+
+        markerElement.style.height =
+          "16px";
+
+        markerElement.style.borderRadius =
+          "9999px";
+
+        markerElement.style.background =
+          "#22d3ee";
+
+        markerElement.style.border =
+          "3px solid rgba(255,255,255,0.95)";
+
+        markerElement.style.boxShadow =
+          "0 0 0 6px rgba(34,211,238,0.20), 0 0 25px rgba(34,211,238,0.95)";
+
+        const selectedMarker =
+          new Marker({
+            element: markerElement,
+            anchor: "center",
+          })
+            .setLngLat([
+              lng,
+              lat,
+            ])
+            .addTo(map);
+
+        window.setTimeout(() => {
+          selectedMarker.remove();
+        }, 6000);
       },
-    }));
+    }),
+    []
+  );
 
-    useEffect(() => {
-      const container = mapContainer.current;
+  useEffect(() => {
+    if (!containerRef.current) {
+      return;
+    }
 
-      if (!container || map.current) {
-        return;
-      }
+    if (mapRef.current) {
+      return;
+    }
 
-      const trainFeatures = trains.map(
-        (train) => ({
-          type: "Feature" as const,
-          id: train.id,
-          geometry: {
-            type: "Point" as const,
-            coordinates: train.currentPosition,
-          },
-          properties: {
-            id: train.id,
-            number: train.number,
-            name: train.name,
-            speed: train.speed,
-            delay: train.delay,
-            status: train.status,
-            direction: train.direction,
-            nextStation:
-              train.nextStation ?? "",
-            dataStatus: train.dataStatus,
-          },
-        })
-      );
+    const map = new MapLibreMap({
+      container:
+        containerRef.current,
 
-      const mapInstance = new Map({
-        container,
+      center: INDIA_CENTER,
 
-        style: {
-          version: 8,
+      zoom: INDIA_ZOOM,
 
-          sources: {
-            osm: {
-              type: "raster",
-              tiles: [
-                "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-              ],
-              tileSize: 256,
-              attribution:
-                "© OpenStreetMap contributors",
-            },
+      minZoom: 3,
 
-            indiaBoundaries: {
-              type: "geojson",
-              data: "/data/india-state-boundaries.geojson",
-            },
+      maxZoom: 18,
 
-            railway: {
-              type: "raster",
-              tiles: [
-                "https://tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png",
-              ],
-              tileSize: 256,
-            },
+      renderWorldCopies: false,
 
-            stations: {
-              type: "geojson",
-              data: "/data/india-railway-stations.geojson",
-            },
+      style: {
+        version: 8,
 
-            trains: {
-              type: "geojson",
-              data: {
-                type: "FeatureCollection",
-                features: trainFeatures,
-              },
-            },
+        sources: {
+          osm: {
+            type: "raster",
+
+            tiles: [
+              OSM_TILE_URL,
+            ],
+
+            tileSize: 256,
+
+            attribution:
+              "© OpenStreetMap contributors",
           },
 
-          layers: [
-            {
-              id: "osm",
-              type: "raster",
-              source: "osm",
-            },
+          openrailwaymap: {
+            type: "raster",
 
-            {
-              id: "india-boundary-fill",
-              type: "fill",
-              source: "indiaBoundaries",
-              paint: {
-                "fill-color": "#8b5cf6",
-                "fill-opacity": 0.04,
-              },
-            },
+            tiles: [
+              OPEN_RAILWAY_MAP_TILE_URL,
+            ],
 
-            {
-              id: "india-boundary-lines",
-              type: "line",
-              source: "indiaBoundaries",
-              paint: {
-                "line-color": "#a855f7",
-                "line-width": [
-                  "interpolate",
-                  ["linear"],
-                  ["zoom"],
-                  3,
-                  0.7,
-                  5,
-                  1.2,
-                  8,
-                  2,
-                ],
-                "line-opacity": 0.75,
-              },
-            },
+            tileSize: 256,
 
-            {
-              id: "railway",
-              type: "raster",
-              source: "railway",
-              minzoom: 2,
-              maxzoom: 19,
-              paint: {
-                "raster-opacity": 0.9,
-              },
-            },
-
-            /* -------------------------
-               STATIONS
-            ------------------------- */
-
-            {
-              id: "station-points",
-              type: "circle",
-              source: "stations",
-              minzoom: 7,
-              paint: {
-                "circle-radius": [
-                  "interpolate",
-                  ["linear"],
-                  ["zoom"],
-                  4.5,
-                  1.5,
-                  7,
-                  3,
-                  10,
-                  5,
-                  14,
-                  7,
-                ],
-                "circle-color": "#ffffff",
-                "circle-opacity": [
-                  "interpolate",
-                  ["linear"],
-                  ["zoom"],
-                  4.5,
-                  0.25,
-                  6,
-                  0.65,
-                  8,
-                  0.9,
-                ],
-                "circle-stroke-color":
-                  "#111827",
-                "circle-stroke-width": 1,
-              },
-            },
-
-            {
-              id: "station-labels",
-              type: "symbol",
-              source: "stations",
-              minzoom: 8,
-              layout: {
-                "text-field": [
-                  "coalesce",
-                  ["get", "name"],
-                  ["get", "name:en"],
-                  "",
-                ],
-                "text-size": [
-                  "interpolate",
-                  ["linear"],
-                  ["zoom"],
-                  8,
-                  9,
-                  12,
-                  11,
-                  16,
-                  13,
-                ],
-                "text-offset": [0, 1.2],
-                "text-anchor": "top",
-                "text-max-width": 10,
-                "text-allow-overlap": false,
-              },
-              paint: {
-                "text-color": "#111827",
-                "text-halo-color":
-                  "#ffffff",
-                "text-halo-width": 1.5,
-                "text-halo-blur": 0.2,
-              },
-            },
-
-            /* -------------------------
-               TRAINS
-            ------------------------- */
-
-            {
-              id: "train-glow",
-              type: "circle",
-              source: "trains",
-
-              paint: {
-                "circle-radius": [
-                  "interpolate",
-                  ["linear"],
-                  ["zoom"],
-                  4,
-                  9,
-                  8,
-                  12,
-                  12,
-                  15,
-                ],
-
-                "circle-color": [
-                  "case",
-
-                  [
-                    "==",
-                    ["get", "status"],
-                    "DELAYED",
-                  ],
-
-                  "#f59e0b",
-
-                  "#22d3ee",
-                ],
-
-                "circle-opacity": 0.16,
-
-                "circle-blur": 1,
-              },
-            },
-
-            {
-              id: "train-points",
-              type: "circle",
-              source: "trains",
-
-              paint: {
-                "circle-radius": [
-                  "interpolate",
-                  ["linear"],
-                  ["zoom"],
-                  4,
-                  3.5,
-                  8,
-                  5,
-                  12,
-                  7,
-                ],
-
-                "circle-color": [
-                  "case",
-
-                  [
-                    "==",
-                    ["get", "status"],
-                    "DELAYED",
-                  ],
-
-                  "#fbbf24",
-
-                  "#67e8f9",
-                ],
-
-                "circle-opacity": 1,
-
-                "circle-stroke-color":
-                  "#071218",
-
-                "circle-stroke-width": 2,
-              },
-            },
-
-            {
-              id: "train-direction",
-              type: "symbol",
-              source: "trains",
-
-              layout: {
-                "text-field": [
-                  "case",
-
-                  [
-                    "==",
-                    ["get", "direction"],
-                    "NORTHBOUND",
-                  ],
-
-                  "▲",
-
-                  "▼",
-                ],
-
-                "text-size": [
-                  "interpolate",
-                  ["linear"],
-                  ["zoom"],
-                  4,
-                  7,
-                  8,
-                  9,
-                  12,
-                  11,
-                ],
-
-                "text-offset": [0, -1.8],
-
-                "text-allow-overlap": true,
-              },
-
-              paint: {
-                "text-color": [
-                  "case",
-
-                  [
-                    "==",
-                    ["get", "status"],
-                    "DELAYED",
-                  ],
-
-                  "#fbbf24",
-
-                  "#67e8f9",
-                ],
-
-                "text-halo-color":
-                  "#071218",
-
-                "text-halo-width": 1,
-              },
-            },
-
-            {
-              id: "train-labels",
-              type: "symbol",
-              source: "trains",
-
-              minzoom: 8,
-
-              layout: {
-                "text-field": [
-                  "get",
-                  "number",
-                ],
-
-                "text-size": [
-                  "interpolate",
-                  ["linear"],
-                  ["zoom"],
-                  8,
-                  9,
-                  12,
-                  11,
-                ],
-
-                "text-offset": [0, 1.8],
-
-                "text-anchor": "top",
-
-                "text-allow-overlap": false,
-              },
-
-              paint: {
-                "text-color": "#ffffff",
-
-                "text-halo-color":
-                  "#071218",
-
-                "text-halo-width": 1.5,
-              },
-            },
-          ],
+            attribution:
+              "OpenRailwayMap / OpenStreetMap",
+          },
         },
 
-        center: [78.9629, 22.5937],
+        layers: [
+          {
+            id: "osm-base",
 
-        zoom: 4.2,
+            type: "raster",
 
-        minZoom: 3,
+            source: "osm",
 
-        maxZoom: 18,
-      });
+            paint: {
+              "raster-saturation": -0.25,
 
-      /* -------------------------
-         MAP CONTROLS
-      ------------------------- */
+              "raster-contrast": 0.05,
 
-      mapInstance.addControl(
-        new NavigationControl(),
-        "top-right"
-      );
+              "raster-brightness-min": 0.05,
 
-      map.current = mapInstance;
+              "raster-brightness-max": 0.92,
+            },
+          },
 
-      /* -------------------------
-         STATION CLICK
-      ------------------------- */
+          {
+            id: "railway-overlay",
 
-      mapInstance.on(
-        "click",
-        "station-points",
-        (event) => {
-          const feature =
-            event.features?.[0];
+            type: "raster",
 
-          if (!feature) {
-            return;
-          }
+            source:
+              "openrailwaymap",
 
-          const coordinates = (
-            feature.geometry as {
-              type: "Point";
-              coordinates: [number, number];
-            }
-          ).coordinates;
+            paint: {
+              "raster-opacity": 0.78,
+            },
+          },
+        ],
+      },
+    });
 
-          const properties =
-            feature.properties ?? {};
+    mapRef.current = map;
 
-          const name =
-            properties.name ??
-            properties["name:en"] ??
-            "Railway Station";
-
-          const code =
-            properties[
-              "ref:IN:railway"
-            ] ??
-            properties.ref ??
-            properties.code;
-
-          const station: Station = {
-            id:
-              feature.id?.toString() ??
-              `${coordinates[0]}-${coordinates[1]}`,
-
-            name: String(name),
-
-            ...(code
-              ? {
-                  code: String(code),
-                }
-              : {}),
-
-            coordinates,
-          };
-
-          stationSelectRef.current?.(
-            station
-          );
-        }
-      );
-
-      /* -------------------------
-         TRAIN CLICK
-      ------------------------- */
-
-      mapInstance.on(
-        "click",
-        "train-points",
-        (event) => {
-          const feature =
-            event.features?.[0];
-
-          if (!feature) {
-            return;
-          }
-
-          const trainId =
-            feature.properties?.id;
-
-          if (!trainId) {
-            return;
-          }
-
-          const train = trains.find(
-            (item) =>
-              item.id === String(trainId)
-          );
-
-          if (!train) {
-            return;
-          }
-
-          trainSelectRef.current?.(
-            train
-          );
-        }
-      );
-
-      /* -------------------------
-         STATION HOVER
-      ------------------------- */
-
-      mapInstance.on(
-        "mouseenter",
-        "station-points",
-        () => {
-          mapInstance.getCanvas().style.cursor =
-            "pointer";
-        }
-      );
-
-      mapInstance.on(
-        "mouseleave",
-        "station-points",
-        () => {
-          mapInstance.getCanvas().style.cursor =
-            "";
-        }
-      );
-
-      /* -------------------------
-         TRAIN HOVER
-      ------------------------- */
-
-      mapInstance.on(
-        "mouseenter",
-        "train-points",
-        () => {
-          mapInstance.getCanvas().style.cursor =
-            "pointer";
-        }
-      );
-
-      mapInstance.on(
-        "mouseleave",
-        "train-points",
-        () => {
-          mapInstance.getCanvas().style.cursor =
-            "";
-        }
-      );
-
-      /* -------------------------
-         RESIZE
-      ------------------------- */
-
-      const resizeObserver =
-        new ResizeObserver(() => {
-          mapInstance.resize();
-        });
-
-      resizeObserver.observe(container);
-
-      mapInstance.once("load", () => {
-        mapInstance.resize();
-      });
-
-      return () => {
-        resizeObserver.disconnect();
-
-        mapInstance.remove();
-
-        map.current = null;
-      };
-    }, []);
-
-    return (
-      <div
-        ref={mapContainer}
-        className="absolute inset-0 h-full w-full"
-      />
+    /*
+     * Navigation controls.
+     *
+     * MapLibre only accepts positions such as
+     * top-right, bottom-right, etc.
+     *
+     * We use top-right here and move the
+     * control to the vertical center using
+     * CSS in globals.css.
+     */
+    map.addControl(
+      new NavigationControl({
+        showCompass: true,
+        showZoom: true,
+        visualizePitch: false,
+      }),
+      "top-right"
     );
-  }
-);
 
-RailMap.displayName = "RailMap";
+    /*
+     * Load station GeoJSON.
+     */
+    async function loadStationData() {
+      try {
+        const response =
+          await fetch(
+            "/data/india-railway-stations.geojson"
+          );
+
+        if (!response.ok) {
+          throw new Error(
+            `Station data request failed: ${response.status}`
+          );
+        }
+
+        const geojson =
+          await response.json();
+
+        if (
+          !geojson ||
+          geojson.type !==
+            "FeatureCollection" ||
+          !Array.isArray(
+            geojson.features
+          )
+        ) {
+          throw new Error(
+            "Invalid station GeoJSON."
+          );
+        }
+
+        /*
+         * Station source.
+         */
+        if (
+          !map.getSource(
+            "stations"
+          )
+        ) {
+          map.addSource(
+            "stations",
+            {
+              type: "geojson",
+              data: geojson,
+            }
+          );
+        }
+
+        /*
+         * Station points.
+         */
+        if (
+          !map.getLayer(
+            "station-points"
+          )
+        ) {
+          map.addLayer({
+            id: "station-points",
+
+            type: "circle",
+
+            source: "stations",
+
+            minzoom: 7,
+
+            paint: {
+              "circle-radius": [
+                "interpolate",
+                ["linear"],
+                ["zoom"],
+                7,
+                2,
+                12,
+                4,
+                16,
+                6,
+              ],
+
+              "circle-color":
+                "rgba(34,211,238,0.85)",
+
+              "circle-stroke-color":
+                "rgba(255,255,255,0.85)",
+
+              "circle-stroke-width": 1,
+
+              "circle-opacity": 0.8,
+            },
+          });
+        }
+
+        /*
+         * Station click.
+         */
+        map.on(
+          "click",
+          "station-points",
+          (event) => {
+            const feature =
+              event.features?.[0];
+
+            if (!feature) {
+              return;
+            }
+
+            if (
+              feature.geometry.type !==
+              "Point"
+            ) {
+              return;
+            }
+
+            const coordinates =
+              feature.geometry
+                .coordinates;
+
+            if (
+              coordinates.length < 2
+            ) {
+              return;
+            }
+
+            const lng =
+              Number(
+                coordinates[0]
+              );
+
+            const lat =
+              Number(
+                coordinates[1]
+              );
+
+            if (
+              !Number.isFinite(
+                lng
+              ) ||
+              !Number.isFinite(
+                lat
+              )
+            ) {
+              return;
+            }
+
+            const properties =
+              feature.properties ??
+              {};
+
+            /*
+             * Station type uses:
+             *
+             * coordinates:
+             * [longitude, latitude]
+             */
+            const station: Station = {
+              id:
+                String(
+                  properties.id ??
+                    `${properties.code ?? "station"}-${lng}-${lat}`
+                ),
+
+              name:
+                String(
+                  properties.name ??
+                    "Unknown Station"
+                ),
+
+              code:
+                properties.code
+                  ? String(
+                      properties.code
+                    )
+                  : undefined,
+
+              coordinates: [
+                lng,
+                lat,
+              ],
+            };
+
+            onStationSelect?.(
+              station
+            );
+
+            /*
+             * Fly to clicked station.
+             */
+            map.flyTo({
+              center: [
+                lng,
+                lat,
+              ],
+
+              zoom: 12,
+
+              speed: 1.4,
+
+              curve: 1.4,
+
+              essential: true,
+            });
+          }
+        );
+
+        /*
+         * Pointer cursor when hovering
+         * over station points.
+         */
+        map.on(
+          "mouseenter",
+          "station-points",
+          () => {
+            map.getCanvas().style.cursor =
+              "pointer";
+          }
+        );
+
+        map.on(
+          "mouseleave",
+          "station-points",
+          () => {
+            map.getCanvas().style.cursor =
+              "";
+          }
+        );
+      } catch (error) {
+        console.error(
+          "Failed to load station GeoJSON:",
+          error
+        );
+      }
+    }
+
+    if (map.isStyleLoaded()) {
+      void loadStationData();
+    } else {
+      map.once("load", () => {
+        void loadStationData();
+      });
+    }
+
+    /*
+     * Keep MapLibre sized correctly.
+     */
+    const resizeObserver =
+      new ResizeObserver(() => {
+        map.resize();
+      });
+
+    resizeObserver.observe(
+      containerRef.current
+    );
+
+    /*
+     * Cleanup.
+     */
+    return () => {
+      resizeObserver.disconnect();
+
+      stationMarkersRef.current.forEach(
+        (
+          marker: Marker
+        ) => {
+          marker.remove();
+        }
+      );
+
+      stationMarkersRef.current.clear();
+
+      map.remove();
+
+      mapRef.current = null;
+    };
+  }, [onStationSelect]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="absolute inset-0 h-full w-full"
+    />
+  );
+});
+
+RailMap.displayName =
+  "RailMap";
 
 export default RailMap;
