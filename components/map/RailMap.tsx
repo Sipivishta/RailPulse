@@ -22,6 +22,8 @@ export type RailMapHandle = {
   flyToStation: (
     coordinate: [number, number]
   ) => void;
+
+  getMap: () => MapLibreMap | null;
 };
 
 type RailMapProps = {
@@ -141,6 +143,14 @@ const RailMap = forwardRef<
           selectedMarker.remove();
         }, 6000);
       },
+
+      /*
+       * Expose the existing MapLibre
+       * instance to the parent.
+       */
+      getMap() {
+        return mapRef.current;
+      },
     }),
     []
   );
@@ -238,13 +248,6 @@ const RailMap = forwardRef<
 
     /*
      * Navigation controls.
-     *
-     * MapLibre only accepts positions such as
-     * top-right, bottom-right, etc.
-     *
-     * We use top-right here and move the
-     * control to the vertical center using
-     * CSS in globals.css.
      */
     map.addControl(
       new NavigationControl({
@@ -254,6 +257,116 @@ const RailMap = forwardRef<
       }),
       "top-right"
     );
+
+    /*
+     * Load railway track GeoJSON.
+     *
+     * This data is derived from the local
+     * OpenStreetMap railway dataset.
+     *
+     * It does NOT use RailRadar.
+     */
+    async function loadRailwayData() {
+      try {
+        const response =
+          await fetch(
+            "/data/india-railway-tracks-simplified.geojson"
+          );
+
+        if (!response.ok) {
+          throw new Error(
+            `Railway data request failed: ${response.status}`
+          );
+        }
+
+        const geojson =
+          await response.json();
+
+        if (
+          !geojson ||
+          geojson.type !==
+            "FeatureCollection" ||
+          !Array.isArray(
+            geojson.features
+          )
+        ) {
+          throw new Error(
+            "Invalid railway GeoJSON."
+          );
+        }
+
+        /*
+         * Railway source.
+         */
+        if (
+          !map.getSource(
+            "railway-tracks"
+          )
+        ) {
+          map.addSource(
+            "railway-tracks",
+            {
+              type: "geojson",
+              data: geojson,
+            }
+          );
+        }
+
+        /*
+         * Railway tracks.
+         */
+        if (
+          !map.getLayer(
+            "railway-tracks"
+          )
+        ) {
+          map.addLayer({
+            id: "railway-tracks",
+
+            type: "line",
+
+            source:
+              "railway-tracks",
+
+            paint: {
+              "line-color":
+                "rgba(100,116,139,0.75)",
+
+              "line-width": [
+                "interpolate",
+                ["linear"],
+                ["zoom"],
+
+                4,
+                0.5,
+
+                7,
+                1,
+
+                10,
+                1.5,
+
+                14,
+                2.5,
+              ],
+
+              "line-opacity": 0.75,
+            },
+          });
+        }
+
+        console.log(
+          "Railway track data loaded:",
+          geojson.features.length,
+          "features"
+        );
+      } catch (error) {
+        console.error(
+          "Failed to load railway GeoJSON:",
+          error
+        );
+      }
+    }
 
     /*
      * Load station GeoJSON.
@@ -488,10 +601,16 @@ const RailMap = forwardRef<
       }
     }
 
+    /*
+     * Load both local datasets after
+     * the MapLibre style is ready.
+     */
     if (map.isStyleLoaded()) {
+      void loadRailwayData();
       void loadStationData();
     } else {
       map.once("load", () => {
+        void loadRailwayData();
         void loadStationData();
       });
     }

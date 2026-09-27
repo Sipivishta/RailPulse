@@ -5,6 +5,15 @@ import {
   setCachedTrain,
 } from "@/lib/live-trains/cache";
 
+import {
+  resolveTrainPosition,
+  type RoutePoint,
+} from "@/lib/live-trains/routeResolver";
+
+import {
+  calculateDelayAnalysis,
+} from "@/lib/live-trains/delayAnalysis";
+
 import type { Coordinate } from "@/lib/live-trains/position";
 
 const RAILRADAR_BASE_URL =
@@ -109,7 +118,6 @@ type RailRadarResponse = {
 
     geometry?: {
       type?: string;
-
       coordinates?: Coordinate[];
     } | null;
 
@@ -231,6 +239,11 @@ type NormalizedLiveTrain = {
     coordinates: Coordinate[];
   } | null;
 
+  /*
+   * Calculated or actual map position.
+   */
+  position: Coordinate | null;
+
   lastUpdatedAt: string | null;
 
   positionQuality:
@@ -239,6 +252,10 @@ type NormalizedLiveTrain = {
     | "UNKNOWN";
 
   provider: "RAILRADAR";
+
+  delayAnalysis: ReturnType<
+    typeof calculateDelayAnalysis
+  >;
 };
 
 type ApiResponse = {
@@ -249,7 +266,9 @@ type ApiResponse = {
   error?: string;
 
   meta?: {
-    source: "RAILRADAR" | "CACHE";
+    source:
+      | "RAILRADAR"
+      | "CACHE";
 
     fetchedAt: number;
 
@@ -267,8 +286,16 @@ function getPositionQuality(
 
   geometryCoordinates:
     | Coordinate[]
+    | null,
+
+  position:
+    | Coordinate
     | null
 ) {
+  /*
+   * RailRadar explicitly says the position
+   * is actual.
+   */
   if (
     currentLocation?.isActualPosition ===
     true
@@ -276,6 +303,17 @@ function getPositionQuality(
     return "ACTUAL" as const;
   }
 
+  /*
+   * We have calculated a position from
+   * route/geometry information.
+   */
+  if (position) {
+    return "CALCULATED" as const;
+  }
+
+  /*
+   * Keep this as a final fallback.
+   */
   if (
     currentLocation?.segmentProgress !==
       undefined &&
@@ -306,6 +344,7 @@ export async function GET(
     return NextResponse.json(
       {
         success: false,
+
         error:
           "Train number is required.",
       },
@@ -443,6 +482,11 @@ export async function GET(
     const data =
       raw.data;
 
+    /*
+     * Provider geometry.
+     *
+     * This can be null.
+     */
     const geometryCoordinates =
       data.geometry?.coordinates &&
       Array.isArray(
@@ -451,6 +495,9 @@ export async function GET(
         ? data.geometry.coordinates
         : null;
 
+    /*
+     * Normalize route.
+     */
     const route =
       Array.isArray(data.route)
         ? data.route
@@ -540,19 +587,140 @@ export async function GET(
             )
         : [];
 
+    /*
+     * Current station.
+     */
     const currentStationCode =
       data.currentLocation
         ?.stationCode ??
       null;
 
+    const currentSequence =
+      data.currentLocation
+        ?.sequence ??
+      null;
+
+    /*
+     * Find the current route point.
+     */
     const currentRoutePoint =
       currentStationCode
         ? route.find(
             (point) =>
               point.stationCode ===
-              currentStationCode
+              currentStationCode &&
+              (
+                currentSequence ===
+                  null ||
+                point.sequence ===
+                  currentSequence
+              )
           )
         : undefined;
+
+    /*
+     * Convert the normalized route into
+     * the shape expected by the position
+     * resolver.
+     */
+    const positionRoute: RoutePoint[] =
+      route.map(
+        (point) => ({
+          sequence:
+            point.sequence,
+
+          stationCode:
+            point.stationCode,
+
+          stationName:
+            point.stationName,
+
+          lat:
+            point.lat,
+
+          lng:
+            point.lng,
+
+          status:
+            point.status,
+
+          distance:
+            point.distance,
+        })
+      );
+
+    /*
+     * Calculate a map position.
+     *
+     * Priority:
+     *
+     * 1. RailRadar actual position
+     * 2. Along-track calculated position
+     * 3. Current route station coordinate
+     * 4. null
+     *
+     * IMPORTANT:
+     * If RailRadar doesn't give actual GPS,
+     * this remains CALCULATED.
+     */
+    let calculatedPosition:
+      Coordinate | null =
+      null;
+
+    if (
+      currentStationCode &&
+      typeof currentSequence ===
+        "number"
+    ) {
+      const resolution =
+        resolveTrainPosition({
+          route:
+            positionRoute,
+
+          currentStationCode,
+
+          currentSequence,
+
+          segmentProgress:
+            data.currentLocation
+              ?.segmentProgress ??
+            null,
+
+          geometry:
+            geometryCoordinates,
+        });
+
+      calculatedPosition =
+        resolution?.coordinate ??
+        null;
+    }
+
+    /*
+     * If RailRadar explicitly says this is
+     * an actual position, use its geometry
+     * coordinate if available.
+     *
+     * Otherwise use our calculated position.
+     *
+     * We deliberately do NOT invent GPS.
+     */
+    const position =
+      calculatedPosition;
+
+    /*
+     * Delay analysis.
+     *
+     * This is derived from the route's
+     * delay information and is not presented
+     * as provider-reported reasoning.
+     */
+    const delayAnalysis =
+      calculateDelayAnalysis(
+        route,
+        currentSequence,
+        data.delayMinutes ??
+          null
+      );
 
     const normalized:
       NormalizedLiveTrain = {
@@ -718,6 +886,11 @@ export async function GET(
             }
           : null,
 
+      /*
+       * THIS WAS THE MISSING FIELD.
+       */
+      position,
+
       lastUpdatedAt:
         data.lastUpdatedAt ??
         null,
@@ -725,13 +898,22 @@ export async function GET(
       positionQuality:
         getPositionQuality(
           data.currentLocation,
-          geometryCoordinates
+
+          geometryCoordinates,
+
+          position
         ),
 
       provider:
         "RAILRADAR",
+
+      delayAnalysis,
     };
 
+    /*
+     * Cache the fully normalized object,
+     * including the calculated position.
+     */
     setCachedTrain(
       number,
       normalized,

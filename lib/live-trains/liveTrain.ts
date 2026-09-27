@@ -1,28 +1,40 @@
-import type { Coordinate } from "./position";
+export type Coordinate = [number, number];
+
+export type LiveTrainProvider =
+  | "RAILRADAR"
+  | "NTES";
+
+export type PositionQuality =
+  | "ACTUAL"
+  | "CALCULATED"
+  | "UNKNOWN";
 
 export type LiveTrainRoutePoint = {
   sequence: number;
   stationCode: string;
   stationName: string;
 
-  lat?: number;
-  lng?: number;
+  scheduledArrival: string | null;
+  scheduledDeparture: string | null;
 
-  status?: string | null;
+  actualArrival: string | null;
+  actualDeparture: string | null;
+
+  delayArrival: number | null;
+  delayDeparture: number | null;
+
+  platform: string | null;
+
+  /*
+   * RailRadar route points may not always
+   * contain a distance value.
+   */
   distance?: number | null;
 
-  scheduledArrival?: string | null;
-  scheduledDeparture?: string | null;
-
-  actualArrival?: string | null;
-  actualDeparture?: string | null;
-
-  delayArrival?: number | null;
-  delayDeparture?: number | null;
-
-  platform?: string | null;
-
-  provenance?: string | null;
+  /*
+   * Provider-specific provenance information.
+   */
+  provenance: string | null;
 };
 
 export type DelayAnalysis = {
@@ -34,33 +46,26 @@ export type DelayAnalysis = {
     | "STABLE"
     | "UNKNOWN";
 
-  delayChangeMinutes: number | null;
-
-  nextStationDelayMinutes: number | null;
-
-  destinationDelayMinutes: number | null;
-
-  recoveredMinutes: number | null;
-
   recoveryOutlook:
     | "HIGH"
     | "MEDIUM"
     | "LOW"
     | "UNKNOWN";
 
-  recoveryConfidence:
-    | "LOW"
-    | "MEDIUM"
-    | "HIGH";
+  recoveredMinutes: number | null;
 
-  reason:
-    | string
-    | null;
+  /*
+   * Change in delay compared with the
+   * previous relevant observation.
+   */
+  delayChangeMinutes: number | null;
 
-  reasonSource:
-    | "PROVIDER"
-    | "INFERRED"
-    | "UNKNOWN";
+  /*
+   * Delay associated with the next station.
+   */
+  nextStationDelayMinutes: number | null;
+
+  reason: string | null;
 };
 
 export type LiveTrain = {
@@ -68,45 +73,23 @@ export type LiveTrain = {
 
   name: string | null;
 
-  type?: string | null;
+  category: string | null;
 
-  category?: string | null;
-
-  origin?: {
+  origin: {
     code: string | null;
     name: string | null;
-  };
+  } | null;
 
-  destination?: {
+  destination: {
     code: string | null;
     name: string | null;
-  };
+  } | null;
 
   status: string | null;
 
-  delayMinutes?: number | null;
-
-  isLive: boolean;
-
-  trackingMode: string | null;
+  delayMinutes: number | null;
 
   currentLocation: {
-    stationCode: string | null;
-    stationName: string | null;
-    sequence: number | null;
-
-    status: string | null;
-
-    segmentProgress: number | null;
-
-    speedKmh: number | null;
-
-    bearingDegrees: number | null;
-
-    isActualPosition: boolean | null;
-  } | null;
-
-  previousHalt: {
     stationCode: string | null;
     stationName: string | null;
     sequence: number | null;
@@ -118,25 +101,19 @@ export type LiveTrain = {
     sequence: number | null;
   } | null;
 
-  route: LiveTrainRoutePoint[];
-
-  geometry: {
-    type: "LineString";
-    coordinates: Coordinate[];
-  } | null;
-
   position: Coordinate | null;
+
+  positionQuality: PositionQuality;
+
+  trackingMode: string | null;
 
   lastUpdatedAt: string | null;
 
-  positionQuality:
-    | "ACTUAL"
-    | "CALCULATED"
-    | "UNKNOWN";
+  route: LiveTrainRoutePoint[];
 
-  provider: "RAILRADAR";
+  delayAnalysis: DelayAnalysis | null;
 
-  delayAnalysis: DelayAnalysis;
+  provider: LiveTrainProvider;
 };
 
 export type LiveTrainApiResponse = {
@@ -147,12 +124,7 @@ export type LiveTrainApiResponse = {
   error?: string;
 
   meta?: {
-    source:
-      | "RAILRADAR"
-      | "CACHE";
-
-    fetchedAt: number;
-
-    expiresAt?: number;
+    fetchedAt?: string;
+    cached?: boolean;
   };
 };
