@@ -1,3 +1,4 @@
+
 export type Coordinate = [number, number];
 
 export type LiveTrainProvider =
@@ -65,7 +66,26 @@ export type DelayAnalysis = {
    */
   nextStationDelayMinutes: number | null;
 
+  /*
+   * Delay associated with the destination.
+   */
+  destinationDelayMinutes: number | null;
+
+  /*
+   * Confidence in RailPulse's recovery outlook.
+   * This is not an official railway confidence score.
+   */
+  recoveryConfidence:
+    | "LOW"
+    | "MEDIUM"
+    | "HIGH";
+
   reason: string | null;
+
+  /*
+   * Identifies where the delay explanation came from.
+   */
+  reasonSource: string;
 };
 
 export type LiveTrain = {

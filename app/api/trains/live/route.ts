@@ -277,54 +277,36 @@ type ApiResponse = {
 };
 
 function getPositionQuality(
-  currentLocation:
+  _currentLocation:
     | NonNullable<
         RailRadarResponse["data"]
       >["currentLocation"]
     | null
     | undefined,
 
-  geometryCoordinates:
+  _geometryCoordinates:
     | Coordinate[]
     | null,
 
   position:
     | Coordinate
     | null
-) {
+): "ACTUAL" | "CALCULATED" | "UNKNOWN" {
   /*
-   * RailRadar explicitly says the position
-   * is actual.
+   * The current API response model does not expose
+   * provider-supplied GPS coordinates.
+   * The isActualPosition flag alone is not enough
+   * to verify the coordinate being returned.
    */
-  if (
-    currentLocation?.isActualPosition ===
-    true
-  ) {
-    return "ACTUAL" as const;
+  if (position === null) {
+    return "UNKNOWN";
   }
 
   /*
-   * We have calculated a position from
-   * route/geometry information.
+   * The position was calculated using route geometry
+   * and segment progress, not verified GPS coordinates.
    */
-  if (position) {
-    return "CALCULATED" as const;
-  }
-
-  /*
-   * Keep this as a final fallback.
-   */
-  if (
-    currentLocation?.segmentProgress !==
-      undefined &&
-    currentLocation?.segmentProgress !==
-      null &&
-    geometryCoordinates !== null
-  ) {
-    return "CALCULATED" as const;
-  }
-
-  return "UNKNOWN" as const;
+  return "CALCULATED";
 }
 
 export async function GET(

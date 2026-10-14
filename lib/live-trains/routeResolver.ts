@@ -1,3 +1,4 @@
+
 import {
   calculateTrainPosition,
   type Coordinate,
@@ -15,12 +16,12 @@ export type RoutePoint = {
 
 export type PositionResolution = {
   coordinate: Coordinate;
-  source: "ROUTE_STATION" | "GEOMETRY";
+  source: "GEOMETRY";
   positionQuality: "CALCULATED";
   currentStation: string;
   currentSequence: number;
-  nextStation: string | null;
-  nextSequence: number | null;
+  nextStation: string;
+  nextSequence: number;
 };
 
 type ResolvePositionInput = {
@@ -38,15 +39,37 @@ export function resolveTrainPosition({
   segmentProgress,
   geometry,
 }: ResolvePositionInput): PositionResolution | null {
-  if (!route.length) {
+  /*
+   * A route alone is not evidence of the train's
+   * current physical location.
+   */
+  if (route.length === 0) {
     return null;
   }
 
   /*
-   * Find the train's current route point.
-   *
-   * We prefer sequence because station codes are not always
-   * guaranteed to be unique across all railway data.
+   * Do not turn missing, invalid, or out-of-range
+   * progress into a plausible-looking position.
+   */
+  if (
+    typeof segmentProgress !== "number" ||
+    !Number.isFinite(segmentProgress) ||
+    segmentProgress < 0 ||
+    segmentProgress > 1
+  ) {
+    return null;
+  }
+
+  /*
+   * A valid along-track estimate requires geometry.
+   */
+  if (!geometry || geometry.length < 2) {
+    return null;
+  }
+
+  /*
+   * Match both station code and sequence to avoid
+   * selecting a repeated station on the wrong section.
    */
   const currentIndex = route.findIndex(
     (point) =>
@@ -59,115 +82,64 @@ export function resolveTrainPosition({
   }
 
   const currentPoint = route[currentIndex];
-
-  /*
-   * If RailRadar has not supplied a segment progress value,
-   * the safest real position we have is the route station
-   * coordinate itself.
-   */
-  if (
-    segmentProgress === null ||
-    segmentProgress === undefined ||
-    !Number.isFinite(segmentProgress)
-  ) {
-    if (
-      typeof currentPoint.lng !== "number" ||
-      typeof currentPoint.lat !== "number"
-    ) {
-      return null;
-    }
-
-    const nextPoint = route[currentIndex + 1] ?? null;
-
-    return {
-      coordinate: [currentPoint.lng, currentPoint.lat],
-      source: "ROUTE_STATION",
-      positionQuality: "CALCULATED",
-      currentStation: currentPoint.stationCode,
-      currentSequence: currentPoint.sequence,
-      nextStation: nextPoint?.stationCode ?? null,
-      nextSequence: nextPoint?.sequence ?? null,
-    };
-  }
-
-  /*
-   * Never allow invalid progress values.
-   */
-  const progress = Math.max(0, Math.min(1, segmentProgress));
-
   const nextPoint = route[currentIndex + 1];
 
+  /*
+   * Without a following route point, we cannot establish
+   * the segment on which to interpolate the train.
+   */
   if (!nextPoint) {
-    /*
-     * There is no following route point.
-     * Fall back to the current route coordinate.
-     */
-    if (
-      typeof currentPoint.lng !== "number" ||
-      typeof currentPoint.lat !== "number"
-    ) {
-      return null;
-    }
-
-    return {
-      coordinate: [currentPoint.lng, currentPoint.lat],
-      source: "ROUTE_STATION",
-      positionQuality: "CALCULATED",
-      currentStation: currentPoint.stationCode,
-      currentSequence: currentPoint.sequence,
-      nextStation: null,
-      nextSequence: null,
-    };
+    return null;
   }
 
   /*
-   * We need geometry for an actual along-track calculation.
+   * Validate station coordinates before attempting
+   * to match the relevant section of railway geometry.
    */
-  if (!geometry || geometry.length < 2) {
-    if (
-      typeof currentPoint.lng !== "number" ||
-      typeof currentPoint.lat !== "number"
-    ) {
-      return null;
-    }
+  const coordinatesAreValid = (
+    point: RoutePoint
+  ): point is RoutePoint & {
+    lat: number;
+    lng: number;
+  } =>
+    typeof point.lat === "number" &&
+    Number.isFinite(point.lat) &&
+    point.lat >= -90 &&
+    point.lat <= 90 &&
+    typeof point.lng === "number" &&
+    Number.isFinite(point.lng) &&
+    point.lng >= -180 &&
+    point.lng <= 180;
 
-    return {
-      coordinate: [currentPoint.lng, currentPoint.lat],
-      source: "ROUTE_STATION",
-      positionQuality: "CALCULATED",
-      currentStation: currentPoint.stationCode,
-      currentSequence: currentPoint.sequence,
-      nextStation: nextPoint.stationCode,
-      nextSequence: nextPoint.sequence,
-    };
-  }
-
-  /*
-   * For now we calculate using the geometry supplied to the
-   * position engine between the current route point and the
-   * next route point.
-   */
   if (
-    typeof currentPoint.lng !== "number" ||
-    typeof currentPoint.lat !== "number" ||
-    typeof nextPoint.lng !== "number" ||
-    typeof nextPoint.lat !== "number"
+    !coordinatesAreValid(currentPoint) ||
+    !coordinatesAreValid(nextPoint)
   ) {
     return null;
   }
 
+  /*
+   * The result is a calculated position, not actual GPS.
+   * This is defensible only if segmentProgress really
+   * describes progress along this specific station segment.
+   */
   const coordinate = calculateTrainPosition(
     geometry,
     [currentPoint.lng, currentPoint.lat],
     [nextPoint.lng, nextPoint.lat],
-    progress
+    segmentProgress
   );
 
-  if (!coordinate) {
-    /*
-     * If the geometry cannot be matched to this route segment,
-     * do not invent a position.
-     */
+  if (
+    !coordinate ||
+    coordinate.length !== 2 ||
+    !Number.isFinite(coordinate[0]) ||
+    !Number.isFinite(coordinate[1]) ||
+    coordinate[0] < -180 ||
+    coordinate[0] > 180 ||
+    coordinate[1] < -90 ||
+    coordinate[1] > 90
+  ) {
     return null;
   }
 
